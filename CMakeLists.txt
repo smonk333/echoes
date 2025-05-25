@@ -128,6 +128,8 @@ target_compile_definitions(SharedCode
 
     # JucePlugin_Name is for some reason doesn't use the nicer PRODUCT_NAME
     PRODUCT_NAME_WITHOUT_VERSION="smoke!Echoes"
+    JucePlugin_IsSynth=0
+    JucePlugin_IsMidiEffect=0
 )
 
 # Link to any other modules you added (with juce_add_module) here!
