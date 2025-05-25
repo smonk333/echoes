@@ -10,12 +10,29 @@ PluginProcessor::PluginProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       )
+                       ),
+                     apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
+    // caching parameter pointers
+    delaySizeParam = apvts.getRawParameterValue("delaySize");
+    feedbackParam = apvts.getRawParameterValue("feedback");
+    wetDryParam = apvts.getRawParameterValue("wetDry");
 }
 
 PluginProcessor::~PluginProcessor()
 {
+}
+
+//======================create parameter layout=================================
+juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
+{
+    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("delaySize", "Delay Size", 0.01f, 10.0f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("feedback", "Feedback", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("wetDry", "Wet/Dry", 0.0f, 1.0f, 0.5f));
+
+    return {params.begin(), params.end() };
 }
 
 //==============================================================================
@@ -86,9 +103,11 @@ void PluginProcessor::changeProgramName (int index, const juce::String& newName)
 //==============================================================================
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
-    juce::ignoreUnused (sampleRate, samplesPerBlock);
+
+    auto delaySeconds = std::clamp(delaySizeParam->load(), 0.01f, 10.0f); // 10 seconds max
+    auto delayBufferSize = static_cast<int>(sampleRate * delaySeconds);
+    circularBuffer.setSize(getTotalNumOutputChannels(), delayBufferSize);
+
 }
 
 void PluginProcessor::releaseResources()
