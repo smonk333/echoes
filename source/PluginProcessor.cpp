@@ -160,12 +160,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float gainBegin = *gainBeginParam;
     const float gainEnd = *gainEndParam;
 
-    float delaySeconds = std::clamp(delaySize, 0.01f, 10.0f); // 10 seconds max
+    float delaySeconds = std::clamp(delaySize, 0.01f, 10.0f);
     int newDelayBufferSize = static_cast<int>(getSampleRate() * delaySeconds);
 
-    if (newDelayBufferSize != previousDelaySeconds)
+    // Fix: Compare with previousDelaySeconds as int, not float
+    if (newDelayBufferSize != static_cast<int>(getSampleRate() * previousDelaySeconds))
     {
-        circularBuffer.setSize(getTotalNumOutputChannels(), newDelayBufferSize);
+        circularBuffer.setSize(getTotalNumOutputChannels(), newDelayBufferSize, false, true); // Clear the buffer
         writePosition = writePosition % newDelayBufferSize;
         delayBufferSize = newDelayBufferSize;
         previousDelaySeconds = delaySeconds;
@@ -175,52 +176,66 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         delayBufferSize = circularBuffer.getNumSamples();
     }
 
+    // Clear unused output channels
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    // Store the dry signal before processing
+    juce::AudioBuffer<float> dryBuffer;
+    dryBuffer.makeCopyOf(buffer);
+
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
-        auto* channelData = buffer.getWritePointer (channel);
+        auto* channelData = buffer.getWritePointer(channel);
+        auto* dryChannelData = dryBuffer.getReadPointer(channel);
 
-        // fill the buffer with the current audio data
-        fillBuffer (channel, bufferSize, delayBufferSize, channelData);
-
-        // writePosition = "where is my audio RIGHT NOW?"
-        // readPosition = "writePosition - x amount of time in the past (samplerate * x number of seconds)"
-
-        // get audio from the past (adjustable via delaySizeParam)
+        // Calculate read position for the delay
         auto readPosition = writePosition - static_cast<int>(delaySeconds * getSampleRate());
-
         if (readPosition < 0)
         {
-            // if our read position is < 0, we need to wrap back around to
-            // the end of the circular buffer
             readPosition += delayBufferSize;
         }
 
-        // if we don't have enough data after readPosition to fill the buffer
-        // (eg: readPosition is near the end of the buffer), we need to wrap
-        // back to the beginning of the circular buffer
+        // Read the delayed signal from the circular buffer
+        juce::AudioBuffer<float> delayedBuffer(1, bufferSize);
+        auto* delayedData = delayedBuffer.getWritePointer(0);
 
-        if (readPosition + bufferSize < delayBufferSize)
+        if (readPosition + bufferSize <= delayBufferSize)
         {
-            buffer.addFromWithRamp(channel, 0, circularBuffer.getReadPointer(channel, readPosition), bufferSize, gainBegin, gainEnd);
+            // Simple case: no wrapping needed
+            delayedBuffer.copyFromWithRamp(0, 0, circularBuffer.getReadPointer(channel, readPosition),
+                                         bufferSize, gainBegin, gainEnd);
         }
-
         else
         {
-            auto numSamplesToEnd = delayBufferSize - readPosition; // how many samples are at the end of the buffer
-
-            buffer.addFromWithRamp(channel, 0, circularBuffer.getReadPointer(channel, readPosition), numSamplesToEnd, gainBegin, gainEnd);
-
+            // Wrapping case: read from end and beginning of circular buffer
+            auto numSamplesToEnd = delayBufferSize - readPosition;
             auto numSamplesAtStart = bufferSize - numSamplesToEnd;
-            buffer.addFromWithRamp(channel, numSamplesToEnd, circularBuffer.getReadPointer(channel, 0), numSamplesAtStart, gainBegin, gainEnd);
+
+            delayedBuffer.copyFromWithRamp(0, 0, circularBuffer.getReadPointer(channel, readPosition),
+                                         numSamplesToEnd, gainBegin, gainEnd);
+            delayedBuffer.copyFromWithRamp(0, numSamplesToEnd, circularBuffer.getReadPointer(channel, 0),
+                                         numSamplesAtStart, gainBegin, gainEnd);
         }
+
+        // Apply wet/dry mixing
+        for (int sample = 0; sample < bufferSize; ++sample)
+        {
+            float wetSignal = delayedData[sample];
+            float drySignal = dryChannelData[sample];
+            channelData[sample] = drySignal * (1.0f - wetDry) + wetSignal * wetDry;
+        }
+
+        // Add feedback: mix the delayed signal back into the input before writing to circular buffer
+        juce::AudioBuffer<float> feedbackBuffer(1, bufferSize);
+        feedbackBuffer.copyFrom(0, 0, dryChannelData, bufferSize);
+        feedbackBuffer.addFromWithRamp(0, 0, delayedData, bufferSize, feedback, feedback);
+
+        // Write the feedback signal to the circular buffer
+        fillBuffer(channel, bufferSize, delayBufferSize, feedbackBuffer.getWritePointer(0));
     }
 
-
-
-    // ensure that writePosition stays between 0 and delayBufferSize
+    // Update write position
     writePosition += bufferSize;
     writePosition %= delayBufferSize;
 }
