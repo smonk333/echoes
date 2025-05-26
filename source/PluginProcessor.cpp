@@ -17,6 +17,8 @@ PluginProcessor::PluginProcessor()
     delaySizeParam = apvts.getRawParameterValue("delaySize");
     feedbackParam = apvts.getRawParameterValue("feedback");
     wetDryParam = apvts.getRawParameterValue("wetDry");
+    gainBeginParam = apvts.getRawParameterValue("gainBegin");
+    gainEndParam = apvts.getRawParameterValue("gainEnd");
 }
 
 PluginProcessor::~PluginProcessor()
@@ -31,6 +33,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("delaySize", "Delay Size", 0.01f, 10.0f, 1.0f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("feedback", "Feedback", 0.0f, 1.0f, 0.5f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("wetDry", "Wet/Dry", 0.0f, 1.0f, 0.5f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("gainBegin", "Gain Begin", 0.0f, 1.0f, 1.0f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("gainEnd", "Gain End", 0.0f, 1.0f, 1.0f));
 
     return { params.begin(), params.end() };
 }
@@ -150,6 +154,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto bufferSize = buffer.getNumSamples();
     auto delayBufferSize = circularBuffer.getNumSamples();
 
+    const float delaySize = *delaySizeParam;
+    const float feedback = *feedbackParam;
+    const float wetDry = *wetDryParam;
+    const float gainBegin = *gainBeginParam;
+    const float gainEnd = *gainEndParam;
+
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
@@ -157,8 +167,40 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     {
         auto* channelData = buffer.getWritePointer (channel);
 
-        // do something with the data
+        // fill the buffer with the current audio data
         fillBuffer (channel, bufferSize, delayBufferSize, channelData);
+
+        // writePosition = "where is my audio RIGHT NOW?"
+        // readPosition = "writePosition - x amount of time in the past (samplerate * x number of seconds)"
+
+        // get audio from the past (adjustable via delaySizeParam)
+        auto readPosition = writePosition - static_cast<int>(delaySize * getSampleRate());
+
+        if (readPosition < 0)
+        {
+            // if our read position is < 0, we need to wrap back around to
+            // the end of the circular buffer
+            readPosition += delayBufferSize;
+        }
+
+        // if we don't have enough data after readPosition to fill the buffer
+        // (eg: readPosition is near the end of the buffer), we need to wrap
+        // back to the beginning of the circular buffer
+
+        if (readPosition + bufferSize < delayBufferSize)
+        {
+            buffer.addFromWithRamp(channel, 0, circularBuffer.getReadPointer(channel, readPosition), bufferSize, gainBegin, gainEnd);
+        }
+
+        else
+        {
+            auto numSamplesToEnd = delayBufferSize - readPosition; // how many samples are at the end of the buffer
+
+            buffer.addFromWithRamp(channel, 0, circularBuffer.getReadPointer(channel, readPosition), numSamplesToEnd, gainBegin, gainEnd);
+
+            auto numSamplesAtStart = bufferSize - numSamplesToEnd;
+            buffer.addFromWithRamp(channel, numSamplesToEnd, circularBuffer.getReadPointer(channel, 0), numSamplesAtStart, gainBegin, gainEnd);
+        }
     }
 
 

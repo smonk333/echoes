@@ -43,6 +43,8 @@ public:
     //==========================parameter setup=================================
 
     std::atomic<float>* delaySizeParam;
+    std::atomic<float>* gainBeginParam;
+    std::atomic<float>* gainEndParam;
     std::atomic<float>* feedbackParam;
     std::atomic<float>* wetDryParam;
     juce::AudioProcessorValueTreeState apvts;
