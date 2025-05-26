@@ -160,6 +160,21 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float gainBegin = *gainBeginParam;
     const float gainEnd = *gainEndParam;
 
+    float delaySeconds = std::clamp(delaySize, 0.01f, 10.0f); // 10 seconds max
+    int newDelayBufferSize = static_cast<int>(getSampleRate() * delaySeconds);
+
+    if (newDelayBufferSize != previousDelaySeconds)
+    {
+        circularBuffer.setSize(getTotalNumOutputChannels(), newDelayBufferSize);
+        writePosition = writePosition % newDelayBufferSize;
+        delayBufferSize = newDelayBufferSize;
+        previousDelaySeconds = delaySeconds;
+    }
+    else
+    {
+        delayBufferSize = circularBuffer.getNumSamples();
+    }
+
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
@@ -174,7 +189,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // readPosition = "writePosition - x amount of time in the past (samplerate * x number of seconds)"
 
         // get audio from the past (adjustable via delaySizeParam)
-        auto readPosition = writePosition - static_cast<int>(delaySize * getSampleRate());
+        auto readPosition = writePosition - static_cast<int>(delaySeconds * getSampleRate());
 
         if (readPosition < 0)
         {

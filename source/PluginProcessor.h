@@ -39,6 +39,7 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    float previousDelaySeconds = 1.0f; // start off with default delay set to 1 second
 
     //==========================parameter setup=================================
 
