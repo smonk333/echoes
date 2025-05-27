@@ -17,9 +17,41 @@ void delayProcessor::prepare(double sampleRate, int numChannels, float maxDelayS
 
 void delayProcessor::process(juce::AudioBuffer<float>& buffer,
     float delaySeconds, float feedback, float wetDry,
+    float gainBegin, float gainEnd, double sampleRate,
+    bool granularMode,
+    float grainSize, float grainDensity,
+    float grainPitch, float grainSpread)
+{
+    if (granularMode) {
+        processGranularDelay(buffer, delaySeconds, feedback, wetDry,
+                           gainBegin, gainEnd, sampleRate,
+                           grainSize, grainDensity, grainPitch, grainSpread);
+    } else {
+        processStandardDelay(buffer, delaySeconds, feedback, wetDry,
+                           gainBegin, gainEnd, sampleRate);
+    }
+}
+
+void delayProcessor::fillBuffer(int channel, int bufferSize, int delayBufferSize, float* channelData)
+{
+    if (delayBufferSize > bufferSize + writePosition)
+    {
+        delayBuffer.copyFrom(channel, writePosition, channelData, bufferSize);
+    }
+    else
+    {
+        auto numSamplesToEnd = delayBufferSize - writePosition;
+        delayBuffer.copyFrom(channel, writePosition, channelData, numSamplesToEnd);
+        auto numSamplesAtStart = bufferSize - numSamplesToEnd;
+        channelData += numSamplesToEnd;
+        delayBuffer.copyFrom(channel, 0, channelData, numSamplesAtStart);
+    }
+}
+
+void delayProcessor::processStandardDelay(juce::AudioBuffer<float>& buffer,
+    float delaySeconds, float feedback, float wetDry,
     float gainBegin, float gainEnd, double sampleRate)
 {
-
     int bufferSize = buffer.getNumSamples();
     int totalNumInputChannels = buffer.getNumChannels();
     int delayBufferSize = delayBuffer.getNumSamples();
@@ -84,18 +116,69 @@ void delayProcessor::process(juce::AudioBuffer<float>& buffer,
     writePosition %= delayBufferSize;
 }
 
-void delayProcessor::fillBuffer(int channel, int bufferSize, int delayBufferSize, float* channelData)
+void delayProcessor::processGranularDelay(juce::AudioBuffer<float>& buffer,
+    float delaySeconds, float feedback, float wetDry,
+    float gainBegin, float gainEnd, double sampleRate,
+    float grainSize, float grainDensity, float grainPitch, float grainSpread)
 {
-    if (delayBufferSize > bufferSize + writePosition)
+    int bufferSize = buffer.getNumSamples();
+    int totalNumInputChannels = buffer.getNumChannels();
+    int delayBufferSize = delayBuffer.getNumSamples();
+
+    delaySeconds = std::clamp(delaySeconds, 0.01f, 10.0f);
+    int newDelayBufferSize = static_cast<int>(sampleRate * delaySeconds);
+
+    if (newDelayBufferSize != bufferSize)
     {
-        delayBuffer.copyFrom(channel, writePosition, channelData, bufferSize);
+        delayBuffer.setSize(totalNumInputChannels, newDelayBufferSize, true, false, false);
+        writePosition = writePosition % newDelayBufferSize;
+        delayBufferSize = newDelayBufferSize;
+        previousDelaySeconds = delaySeconds;
+        grainProcessor.prepare(sampleRate, totalNumInputChannels, delaySeconds);
     }
-    else
+
+    // Store dry signal
+    juce::AudioBuffer<float> dryBuffer;
+    dryBuffer.makeCopyOf(buffer);
+
+    // Fill delay buffer with input + feedback first
+    for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
-        auto numSamplesToEnd = delayBufferSize - writePosition;
-        delayBuffer.copyFrom(channel, writePosition, channelData, numSamplesToEnd);
-        auto numSamplesAtStart = bufferSize - numSamplesToEnd;
-        channelData += numSamplesToEnd;
-        delayBuffer.copyFrom(channel, 0, channelData, numSamplesAtStart);
+        auto* channelData = buffer.getWritePointer(channel);
+        auto* dryChannelData = dryBuffer.getReadPointer(channel);
+
+        // Create feedback buffer (input + delayed signal with feedback)
+        juce::AudioBuffer<float> feedbackBuffer(2, bufferSize);
+        feedbackBuffer.copyFrom(0, 0, dryChannelData, bufferSize);
+
+        // Add feedback from delay buffer if we have enough history
+        if (writePosition >= bufferSize) {
+            auto readPos = writePosition - bufferSize;
+            feedbackBuffer.addFromWithRamp(0, 0, delayBuffer.getReadPointer(channel, readPos),
+                                         bufferSize, feedback, feedback);
+        }
+
+        fillBuffer(channel, bufferSize, delayBufferSize, feedbackBuffer.getWritePointer(0));
     }
+
+    // Process granular delay
+    grainProcessor.process(buffer, delayBuffer, writePosition,
+                         grainSize, grainDensity, grainPitch, grainSpread, wetDry);
+
+    // Mix dry signal back in (grain processor handles wet/dry internally, but we can adjust)
+    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    {
+        auto* channelData = buffer.getWritePointer(channel);
+        auto* dryChannelData = dryBuffer.getReadPointer(channel);
+
+        for (int sample = 0; sample < bufferSize; ++sample)
+        {
+            // Apply gain ramping to the final output
+            float gainRamp = gainBegin + (gainEnd - gainBegin) * (static_cast<float>(sample) / bufferSize);
+            channelData[sample] *= gainRamp;
+        }
+    }
+
+    writePosition += bufferSize;
+    writePosition %= delayBufferSize;
 }
