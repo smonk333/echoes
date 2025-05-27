@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "delayProcessor.h"
 
 #if (MSVC)
 #include "ipps.h"
@@ -39,7 +40,6 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-    float previousDelaySeconds = 1.0f; // start off with default delay set to 1 second
 
     //==========================parameter setup=================================
 
@@ -51,8 +51,8 @@ public:
     juce::AudioProcessorValueTreeState apvts;
 
 private:
-    void fillBuffer (int channel, int bufferSize, int delayBufferSize, float* channelData);
-    juce::AudioBuffer<float> delayBuffer;
-    int writePosition { 0 }; // for keeping track of where to write in the circular buffer
+
+    delayProcessor delay;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };
