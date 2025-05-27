@@ -52,7 +52,7 @@ public:
 
 private:
     void fillBuffer (int channel, int bufferSize, int delayBufferSize, float* channelData);
-    juce::AudioBuffer<float> circularBuffer;
+    juce::AudioBuffer<float> delayBuffer;
     int writePosition { 0 }; // for keeping track of where to write in the circular buffer
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

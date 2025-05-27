@@ -110,7 +110,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     auto delaySeconds = std::clamp(delaySizeParam->load(), 0.01f, 10.0f); // 10 seconds max
     auto delayBufferSize = static_cast<int>(sampleRate * delaySeconds);
-    circularBuffer.setSize(getTotalNumOutputChannels(), delayBufferSize);
+    delayBuffer.setSize(getTotalNumOutputChannels(), delayBufferSize);
 
 }
 
@@ -152,7 +152,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
     auto bufferSize = buffer.getNumSamples();
-    auto delayBufferSize = circularBuffer.getNumSamples();
+    auto delayBufferSize = delayBuffer.getNumSamples();
 
     const float delaySize = *delaySizeParam;
     const float feedback = *feedbackParam;
@@ -166,14 +166,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Fix: Compare with previousDelaySeconds as int, not float
     if (newDelayBufferSize != static_cast<int>(getSampleRate() * previousDelaySeconds))
     {
-        circularBuffer.setSize(getTotalNumOutputChannels(), newDelayBufferSize, false, true); // Clear the buffer
+        delayBuffer.setSize(getTotalNumOutputChannels(), newDelayBufferSize, false, true); // Clear the buffer
         writePosition = writePosition % newDelayBufferSize;
         delayBufferSize = newDelayBufferSize;
         previousDelaySeconds = delaySeconds;
     }
     else
     {
-        delayBufferSize = circularBuffer.getNumSamples();
+        delayBufferSize = delayBuffer.getNumSamples();
     }
 
     // Clear unused output channels
@@ -203,7 +203,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         if (readPosition + bufferSize <= delayBufferSize)
         {
             // Simple case: no wrapping needed
-            delayedBuffer.copyFromWithRamp(0, 0, circularBuffer.getReadPointer(channel, readPosition),
+            delayedBuffer.copyFromWithRamp(0, 0, delayBuffer.getReadPointer(channel, readPosition),
                                          bufferSize, gainBegin, gainEnd);
         }
         else
@@ -212,9 +212,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             auto numSamplesToEnd = delayBufferSize - readPosition;
             auto numSamplesAtStart = bufferSize - numSamplesToEnd;
 
-            delayedBuffer.copyFromWithRamp(0, 0, circularBuffer.getReadPointer(channel, readPosition),
+            delayedBuffer.copyFromWithRamp(0, 0, delayBuffer.getReadPointer(channel, readPosition),
                                          numSamplesToEnd, gainBegin, gainEnd);
-            delayedBuffer.copyFromWithRamp(0, numSamplesToEnd, circularBuffer.getReadPointer(channel, 0),
+            delayedBuffer.copyFromWithRamp(0, numSamplesToEnd, delayBuffer.getReadPointer(channel, 0),
                                          numSamplesAtStart, gainBegin, gainEnd);
         }
 
@@ -247,7 +247,7 @@ void PluginProcessor::fillBuffer(int channel, int bufferSize, int delayBufferSiz
     if (delayBufferSize > bufferSize + writePosition)
     {
         // copy main buffer contents to circular buffer
-        circularBuffer.copyFrom(channel, writePosition, channelData, bufferSize);
+        delayBuffer.copyFrom(channel, writePosition, channelData, bufferSize);
     }
 
     else
@@ -256,7 +256,7 @@ void PluginProcessor::fillBuffer(int channel, int bufferSize, int delayBufferSiz
         auto numSamplesToEnd = delayBufferSize - writePosition;
 
         // copy that amount of data from the main buffer to the circular buffer
-        circularBuffer.copyFrom(channel, writePosition, channelData, numSamplesToEnd);
+        delayBuffer.copyFrom(channel, writePosition, channelData, numSamplesToEnd);
 
         // calculate how much data is left to copy
         auto numSamplesAtStart = bufferSize - numSamplesToEnd;
@@ -264,7 +264,7 @@ void PluginProcessor::fillBuffer(int channel, int bufferSize, int delayBufferSiz
         channelData += numSamplesToEnd; // move the pointer forward by the amount copied
 
         // copy remaining amount of data to the start (index 0) of the circular buffer
-        circularBuffer.copyFrom(channel, 0, channelData, numSamplesAtStart);
+        delayBuffer.copyFrom(channel, 0, channelData, numSamplesAtStart);
     }
 }
 
