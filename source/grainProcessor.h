@@ -43,6 +43,7 @@ public:
 
 private:
     static constexpr int MAX_GRAINS = 1000;
+    std::vector<Grain> grains;
 
     double sampleRate;
     int numChannels;
@@ -57,19 +58,16 @@ private:
 
     // parameters
     float grainSizeMs;
-    float grainDensityMs;
+    float grainDensityHz;
     float grainPitchRatio;
     float grainSpreadMs;
 
     // helper methods
     void triggerGrain(int channel, int delayBufferWritePos);
     float getGrainEnvelope(const Grain& grain) const;
-    int getRandomDelayPosition(int writePosition) const;
+    int getRandomDelayPosition(int writePosition);
     void processGrain(Grain& grain, juce::AudioBuffer<float>& outputBuffer,
         const juce::AudioBuffer<float>& delayBuffer, int bufferSize);
-
 };
-
-
 
 #endif //GRAINPROCESSOR_H
