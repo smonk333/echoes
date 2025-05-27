@@ -19,6 +19,14 @@ PluginProcessor::PluginProcessor()
     wetDryParam = apvts.getRawParameterValue("wetDry");
     gainBeginParam = apvts.getRawParameterValue("gainBegin");
     gainEndParam = apvts.getRawParameterValue("gainEnd");
+
+    // granular parameter caching
+    granularModeParam = apvts.getRawParameterValue("granularMode");
+    grainSizeParam = apvts.getRawParameterValue("grainSize");
+    grainDensityParam = apvts.getRawParameterValue("grainDensity");
+    grainPitchParam = apvts.getRawParameterValue("grainPitch");
+    grainSpreadParam = apvts.getRawParameterValue("grainSpread");
+
 }
 
 PluginProcessor::~PluginProcessor()
@@ -35,6 +43,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("wetDry", "Wet/Dry", 0.0f, 1.0f, 0.5f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("gainBegin", "Gain Begin", 0.0f, 1.0f, 1.0f));
     params.push_back (std::make_unique<juce::AudioParameterFloat> ("gainEnd", "Gain End", 0.0f, 1.0f, 1.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterBool> ("granularMode", "Granular Mode", false));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("grainSize", "Grain Size", 10.0f, 500.0f, 100.0f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("grainDensity", "Grain Density", 1.0f, 50.0f, 10.0f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("grainPitch", "Grain Pitch", 0.25f, 4.0f, 1.0f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat> ("grainSpread", "Grain Spread", 0.0f, 200.0f, 50.0f));
 
     return { params.begin(), params.end() };
 }
@@ -149,13 +163,20 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
+    bool granularMode = *granularModeParam > 0.5f;
+
     delay.process(buffer,
               *delaySizeParam,
               *feedbackParam,
               *wetDryParam,
               *gainBeginParam,
               *gainEndParam,
-              getSampleRate());
+              getSampleRate(),
+              granularMode,
+              *grainSizeParam,
+              *grainDensityParam,
+              *grainPitchParam,
+              *grainSpreadParam);
 
 }
 

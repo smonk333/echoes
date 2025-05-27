@@ -43,11 +43,20 @@ public:
 
     //==========================parameter setup=================================
 
+    // standard delay parameters
     std::atomic<float>* delaySizeParam;
     std::atomic<float>* gainBeginParam;
     std::atomic<float>* gainEndParam;
     std::atomic<float>* feedbackParam;
     std::atomic<float>* wetDryParam;
+
+    // granular parameters
+    std::atomic<float>* granularModeParam;
+    std::atomic<float>* grainSizeParam;
+    std::atomic<float>* grainDensityParam;
+    std::atomic<float>* grainPitchParam;
+    std::atomic<float>* grainSpreadParam;
+
     juce::AudioProcessorValueTreeState apvts;
 
 private:
